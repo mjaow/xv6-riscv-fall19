@@ -75,6 +75,17 @@ sys_read(void)
 
   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
     return -1;
+
+  struct proc *proc=myproc();
+
+  int pa=walkaddr(proc->pagetable,p);
+
+  if(pa==0){
+      if(handle_page_fault(proc,p)){
+          return -1;
+      }
+  }
+
   return fileread(f, p, n);
 }
 
@@ -87,6 +98,16 @@ sys_write(void)
 
   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
     return -1;
+
+  struct proc *proc=myproc();
+
+  int pa=walkaddr(proc->pagetable,p);
+
+  if(pa==0){
+      if(handle_page_fault(proc,p)){
+          return -1;
+      }
+  }
 
   return filewrite(f, p, n);
 }
@@ -462,6 +483,15 @@ sys_pipe(void)
 
   if(argaddr(0, &fdarray) < 0)
     return -1;
+
+  int pa=walkaddr(p->pagetable,fdarray);
+
+  if(pa==0){
+      if(handle_page_fault(p,fdarray)){
+          return -1;
+      }
+  }
+
   if(pipealloc(&rf, &wf) < 0)
     return -1;
   fd0 = -1;

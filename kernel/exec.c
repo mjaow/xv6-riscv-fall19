@@ -104,11 +104,17 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
+
+  if(p->pid==1){
+      //print page table for the first user-level process
+      vmprint(pagetable);
+  }
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
   p->sz = sz;
+  p->ustack = stackbase; // inital user stack bottom
   p->tf->epc = elf.entry;  // initial program counter = main
   p->tf->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
