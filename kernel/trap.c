@@ -16,6 +16,43 @@ void kernelvec();
 
 extern int devintr();
 
+int
+handle_page_fault(struct proc *p,uint64 va){
+    pagetable_t pagetable=p->pagetable;
+    uint64 a=PGROUNDDOWN(va);
+    char *mem;
+    if(a>p->sz){
+        return 1;
+    }
+
+    pte_t *pte=walk(pagetable,a,0);
+
+    if(pte==0||(*pte & PTE_V)==0||(*pte & PTE_U)==0||(*pte & PTE_COW)==0){
+        return -1;
+    }
+
+    if((mem=(char *)kalloc())==0){
+        return 1;
+    }
+
+    char *pa=(char *)PTE2PA(*pte);
+    int flags=PTE_FLAGS(*pte);
+
+    flags |= PTE_W;
+    flags &= ~PTE_COW;
+
+    memmove(mem,pa,PGSIZE);
+
+    kfree((void*)pa);
+
+    if(mappages(pagetable, a, PGSIZE, (uint64)mem, flags) != 0){
+        kfree(mem);
+        return 1;
+    }
+
+    return 0;
+}
+
 void
 trapinit(void)
 {
@@ -50,7 +87,8 @@ usertrap(void)
   // save user program counter.
   p->tf->epc = r_sepc();
   
-  if(r_scause() == 8){
+  uint64 c;
+  if((c=r_scause()) == 8){
     // system call
 
     if(p->killed)
@@ -67,6 +105,11 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(c== 13 || c==15){
+    // page fault
+    if(handle_page_fault(p,r_stval())){
+        p->killed=1;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
