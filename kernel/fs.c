@@ -388,6 +388,8 @@ bmap(struct inode *ip, uint bn)
   }
   bn -= NDIRECT;
 
+  //一个Indirect元素：前N个元素代表N个索引，指向N个block的位置，最后1个元素指向1个block，这个block本身就是索引，即1k byte/4 byte=256个索引，指向另外256个block
+  //两个Indirect元素：前N个元素代表N个索引，第N+1个同上，第N+2个指向一个索引block，包含256个索引，每个索引又指向一个索引block，包含256个block。总共可以包含256*256=65536个block
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
@@ -402,7 +404,36 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
 
+  bn-=NINDIRECT;
+
+  if(bn < NDOUBLEINDIRECT){
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+
+    int i1=bn/NINDIRECT;
+    int i2=bn%NINDIRECT;
+
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if((addr = a[i1]) == 0){
+      a[i1] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+
+    bp = bread(ip->dev,addr);
+    a = (uint*)bp->data;
+    if((addr = a[i2]) == 0){
+      a[i2] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+
+    return addr;
+  }
+
   panic("bmap: out of range");
+
 }
 
 // Truncate inode (discard contents).
