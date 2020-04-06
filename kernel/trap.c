@@ -3,8 +3,11 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -32,6 +35,65 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+struct vma *
+pickvma(struct proc *p,uint64 a)
+{
+    for(int i=0;i<MAX_VMA_COUNT;i++){
+        if(p->vma_list[i].used&&a>=p->vma_list[i].start&&a<p->vma_list[i].end){
+            return &p->vma_list[i];
+        }
+    }
+    return 0;
+}
+
+int
+handle_page_fault(struct proc *p,uint64 va)
+{
+    pagetable_t pagetable=p->pagetable;
+    uint64 a=PGROUNDDOWN(va);
+
+    if(a>=TRAPFRAME){
+        return -1;
+    }
+
+    struct vma *vma;
+
+    if((vma=pickvma(p,a))==0){
+        return -1;
+    }
+
+    struct inode *ip;
+    if(vma->file==0||(ip=vma->file->ip)==0){
+        return -1;
+    }
+
+    char *mem;
+    if((mem=(char *)kalloc())==0){
+        return -1;
+    }
+
+    if(mappages(pagetable, a, PGSIZE, (uint64)mem, vma->prot|PTE_U) != 0){
+        kfree(mem);
+        return -1;
+    }
+
+    int r;
+    ilock(ip);
+
+    if((r=readi(ip, 1, a, a-vma->start, PGSIZE))<=0){
+        iunlock(ip);
+        return -1;
+    }
+
+    iunlock(ip);
+
+    if(r<PGSIZE){
+        memset((char *)(mem+r),0,PGSIZE-r);
+    }
+
+    return 0;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -53,7 +115,8 @@ usertrap(void)
   // save user program counter.
   p->tf->epc = r_sepc();
   
-  if(r_scause() == 8){
+  uint64 c;
+  if((c=r_scause()) == 8){
     // system call
 
     if(p->killed)
@@ -70,6 +133,11 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(c==13||c==15){
+      //page fault
+      if(handle_page_fault(p,r_stval())<0){
+          p->killed=1;
+      }
   } else {
     printf("usertrap(): unexpected scause %p (%s) pid=%d\n", r_scause(), scause_desc(r_scause()), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

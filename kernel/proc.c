@@ -123,6 +123,14 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  for(int i=0;i<MAX_VMA_COUNT;i++){
+    p->vma_list[i].used=0;
+    p->vma_list[i].start=0;
+    p->vma_list[i].end=0;
+    p->vma_list[i].prot=0;
+    p->vma_list[i].file=0;
+  }
+
   return p;
 }
 
@@ -261,6 +269,19 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
+  for(int i=0;i<MAX_VMA_COUNT;i++){
+    np->vma_list[i].used=p->vma_list[i].used;
+    np->vma_list[i].start=p->vma_list[i].start;
+    np->vma_list[i].end=p->vma_list[i].end;
+    np->vma_list[i].flags=p->vma_list[i].flags;
+    np->vma_list[i].prot=p->vma_list[i].prot;
+
+    if(p->vma_list[i].file){
+        np->vma_list[i].file=filedup(p->vma_list[i].file);
+    }
+  }
+
   np->sz = p->sz;
 
   np->parent = p;
@@ -331,6 +352,12 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  for(int i=0;i<MAX_VMA_COUNT;i++){
+    if(p->vma_list[i].used){
+        munmap(p->vma_list[i].start,p->vma_list[i].end-p->vma_list[i].start);       
     }
   }
 

@@ -75,7 +75,7 @@ kvminithart()
 //   21..39 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..12 -- 12 bits of byte offset within the page.
-static pte_t *
+pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
   if(va >= MAXVA)
@@ -190,8 +190,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0){
-      printf("va=%p pte=%p\n", a, *pte);
-      panic("uvmunmap: not mapped");
+      if(a == last)
+        break;
+      a += PGSIZE;
+      pa += PGSIZE;
+      continue;
     }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");

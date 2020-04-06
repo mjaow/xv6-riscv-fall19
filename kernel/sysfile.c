@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -483,3 +484,175 @@ sys_pipe(void)
   return 0;
 }
 
+int
+mmap(uint64 addr,int len,int prot,int flags,struct file *f,int offset)
+{
+    if(addr!=0 || offset!=0||f==0){
+        return -1;
+    }
+
+    int pt=prot;
+    if(flags & MAP_PRIVATE){
+        pt &= ~PROT_WRITE;
+    }
+
+    //no readable
+    if(f->readable==0){
+        return -1;
+    }
+
+    //no writable and mmap with write
+    if((f->writable==0)&&(pt&PROT_WRITE)){
+        return -1;
+    }
+
+    struct proc *p = myproc();
+
+    int i;
+    for(i=0;i<MAX_VMA_COUNT&&p->vma_list[i].used;i++){
+    }
+
+    if(i==MAX_VMA_COUNT){
+        return -1;
+    }
+
+    uint64 start;
+    uint64 end;
+    if(i==0){
+        start=MMAP_BASE;
+    }else{
+        start=p->vma_list[i-1].end;
+    }
+
+    if(start>TRAPFRAME){
+        return -1;
+    }
+
+    end=start+PGROUNDUP(len);
+
+    if(end>TRAPFRAME){
+        end=TRAPFRAME;
+    }
+
+    p->vma_list[i].used=1;
+    p->vma_list[i].start=start;
+    p->vma_list[i].end=end;
+    p->vma_list[i].prot=prot;
+    p->vma_list[i].flags=flags;
+    p->vma_list[i].file=f;
+
+    filedup(f);
+
+    return start;
+}
+
+uint64
+sys_mmap(void)
+{
+    uint64 addr;
+    int len;
+    int prot;
+    int flags;
+    int offset;
+    struct file *f;
+
+    if(argaddr(0,&addr) < 0 || argint(1,&len) < 0 || argint(2,&prot) < 0 || argint(3,&flags) < 0 || argfd(4,0,&f) < 0 || argint(5,&offset) < 0){
+        return -1;
+    }
+
+    return mmap(addr,len,prot,flags,f,offset);
+}
+
+struct vma *
+findvma(struct proc *p,uint64 addr){
+    for(int i=0;i<MAX_VMA_COUNT;i++){
+        if(p->vma_list[i].start<=addr&&p->vma_list[i].end>addr){
+            return &p->vma_list[i];
+        }
+    }
+
+    return 0;
+}
+
+int
+write(struct file *f,uint64 addr,int n){
+    if(f->writable == 0)
+        return -1;
+
+    int r;
+    begin_op(f->ip->dev);
+    ilock(f->ip);
+    r = writei(f->ip, 1, addr , 0, n);
+    iunlock(f->ip);
+    end_op(f->ip->dev);
+    return r == n ? n : -1;
+}
+
+int 
+munmap(uint64 addr,int len)
+{
+    struct proc *p=myproc();
+    struct vma *vma;
+
+    //find the mmapped file
+    if((vma=findvma(p,addr))==0){
+        return -1;
+    }
+
+    int flags=vma->flags;
+    int prot=vma->prot;
+
+    if((flags & MAP_PRIVATE) && (flags & MAP_SHARED)){
+        return -1;
+    }
+
+    if((prot & PROT_WRITE) && (flags & MAP_SHARED)){
+        //write back only if modified
+        pte_t *pte=walk(p->pagetable, addr,0);
+
+        if(pte && (*pte & PTE_V) && (*pte & PTE_D) && write(vma->file,addr,len)<0){
+            return -1;
+        }
+    }
+ 
+    //unmap with 3 cases:
+    //1. tail
+    //2. head
+    //3. whole  
+    //
+    //impossible in the middle
+    uvmunmap(p->pagetable, addr, len, 1);
+
+    int a=addr+len;
+    if(addr>vma->start){
+        //tail
+        vma->end=addr;
+    }else if(a<vma->end){
+        //head
+        vma->start=a;
+    }else{
+        //whole
+        fileclose(vma->file);
+        vma->used=0;
+        vma->start=0;
+        vma->end=0;
+        vma->flags=0;
+        vma->prot=0;
+        vma->file=0;
+    }
+    
+    return 0;
+}
+
+uint64
+sys_munmap(void)
+{
+    uint64 addr;
+    int len;
+
+    if(argaddr(0,&addr) < 0 ||argint(1,&len) < 0){
+        return -1;
+    }
+
+    return munmap(addr,len);
+}
