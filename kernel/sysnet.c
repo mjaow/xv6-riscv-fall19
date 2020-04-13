@@ -87,6 +87,96 @@ bad:
 // and writing for network sockets.
 //
 
+void
+sockclose(struct sock *s)
+{
+  acquire(&lock);
+
+  struct sock *pos = sockets;
+  struct sock *prev=0;
+
+  if(pos==0){
+    release(&lock);
+    return;
+  }
+
+  while (pos) {
+    if (pos->raddr == s->raddr &&
+        pos->lport == s->lport &&
+	      pos->rport == s->rport) {
+      break;
+    }
+    prev = pos;
+    pos = pos->next;
+  }
+
+  if(pos==0){
+    release(&lock);
+    return;
+  }
+
+  if(prev==0){
+    sockets=sockets->next;
+  }else{
+    prev->next=prev->next->next;
+  }
+
+  release(&lock);
+
+  acquire(&s->lock);
+  while(!mbufq_empty(&s->rxq)){
+    mbuffree(mbufq_pophead(&s->rxq));
+  }
+  release(&s->lock);
+
+  kfree(s);
+}
+
+int
+sockread(struct sock *s, uint64 addr, int n)
+{
+  acquire(&s->lock);
+  while(mbufq_empty(&s->rxq)){
+    sleep(&s->lport,&s->lock);
+  }
+
+  struct mbuf *buf=mbufq_pophead(&s->rxq);
+
+  int len=n>buf->len?buf->len:n;
+
+  if(copyout(myproc()->pagetable,addr,buf->head,len)==-1){
+    release(&s->lock);
+    mbuffree(buf);
+    return -1;
+  }
+
+  release(&s->lock);
+  mbuffree(buf);
+
+  return len;
+}
+
+int
+sockwrite(struct sock *s, uint64 addr, int n)
+{
+  unsigned int headroom=sizeof(struct udp)+sizeof(struct ip)+sizeof(struct eth);
+  struct mbuf *buf=mbufalloc(headroom);
+
+  if(buf==0){
+    return -1;
+  }
+
+  mbufput(buf,n);
+
+  if(copyin(myproc()->pagetable,buf->head,addr,n)==-1){
+    mbuffree(buf);
+    return -1;
+  }
+
+  net_tx_udp(buf,s->raddr,s->lport,s->rport);
+  return n;
+}
+
 // called by protocol handler layer to deliver UDP packets
 void
 sockrecvudp(struct mbuf *m, uint32 raddr, uint16 lport, uint16 rport)
@@ -98,5 +188,26 @@ sockrecvudp(struct mbuf *m, uint32 raddr, uint16 lport, uint16 rport)
   // any sleeping reader. Free the mbuf if there are no sockets
   // registered to handle it.
   //
-  mbuffree(m);
+  acquire(&lock);
+
+  struct sock *pos=sockets;
+
+  while(pos){
+    if(pos->raddr==raddr&&pos->lport==lport&&pos->rport==rport){
+      break;
+    }
+    pos=pos->next;
+  }
+
+  release(&lock);
+  if(pos==0){
+    mbuffree(m);
+    return;
+  }
+
+  acquire(&pos->lock);
+  mbufq_pushtail(&pos->rxq,m);
+  release(&pos->lock);
+
+  wakeup(&pos->lport);
 }
