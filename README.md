@@ -31,7 +31,7 @@ write an unix like operating system
 
 ### Lab7: Locks
 
-[Locks](https://github.com/mjaow/xv6-riscv-fall19/tree/lock)
+[Improving parallelism](https://github.com/mjaow/xv6-riscv-fall19/tree/lock)
 
 ### Lab8: File system
 
