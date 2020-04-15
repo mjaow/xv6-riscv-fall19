@@ -35,15 +35,15 @@ write an unix like operating system
 
 ### Lab8: File system
 
-[File system](https://github.com/mjaow/xv6-riscv-fall19/tree/fs)
+[Support large files and symbolic links](https://github.com/mjaow/xv6-riscv-fall19/tree/fs)
 
 ### Lab9: mmap
 
-[mmap](https://github.com/mjaow/xv6-riscv-fall19/tree/mmap)
+[Implement mmap](https://github.com/mjaow/xv6-riscv-fall19/tree/mmap)
 
  ### Lab10: Networking
 
-[Network](https://github.com/mjaow/xv6-riscv-fall19/tree/net)
+[Support NIC device diver and UDP network sockets](https://github.com/mjaow/xv6-riscv-fall19/tree/net)
 
 ## Reference
 
