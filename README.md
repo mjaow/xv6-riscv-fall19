@@ -43,7 +43,7 @@ write an unix like operating system
 
  ### Lab10: Networking
 
-Networking
+[Network](https://github.com/mjaow/xv6-riscv-fall19/tree/net)
 
 ## Reference
 
@@ -70,3 +70,7 @@ https://pdos.csail.mit.edu/6.828/2019/lec/l-usingvm.pdf
 https://github.com/skyzh/6.S081-xv6-riscv-fall19
 
 https://book.douban.com/subject/4843567
+
+https://pdos.csail.mit.edu/6.828/2019/lec/l-networking.pdf
+
+https://pdos.csail.mit.edu/6.828/2019/readings/hardware/8254x_GBe_SDM.pdf
